@@ -1184,10 +1184,8 @@ async function fetchLive() {
     'actor-search':   `${BASE}/eos?languageIso2Code=en&page=1&pageSize=10&size=10&name=${encodeURIComponent(id)}`,
   };
 
-  // Use Vercel proxy when deployed, fall back to direct (works in browser only on some endpoints)
-  const useProxy = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
   const urlMap = Object.fromEntries(
-    Object.entries(targetUrls).map(([k, v]) => [k, useProxy ? `/api/proxy?url=${encodeURIComponent(v)}` : v])
+    Object.entries(targetUrls).map(([k, v]) => [k, `/api/proxy?url=${encodeURIComponent(v)}`])
   );
   const labelMap = {
     'device-detail': `Device ${id.slice(0,8)}…`,
@@ -1324,8 +1322,7 @@ let ldDeviceList   = [];
 let ldDetailCache  = {}; // uuid → { status: 'loading'|'loaded'|'error', data, error }
 
 function ldProxyUrl(target) {
-  const local = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  return local ? target : `/api/proxy?url=${encodeURIComponent(target)}`;
+  return `/api/proxy?url=${encodeURIComponent(target)}`;
 }
 
 async function searchLive() {
