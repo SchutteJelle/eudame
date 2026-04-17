@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EUDAMED API Explorer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+<style>
+  :root { --accent: #1d4ed8; }
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .field-row { cursor: pointer; transition: background .1s; }
+  .field-row:hover { background: #eff6ff; }
+  .field-row.active { background: #dbeafe; border-left: 3px solid #1d4ed8; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+  .tag-string    { background: #dcfce7; color: #166534; }
+  .tag-boolean   { background: #fef9c3; color: #854d0e; }
+  .tag-integer   { background: #fce7f3; color: #9d174d; }
+  .tag-uuid      { background: #ede9fe; color: #5b21b6; }
+  .tag-date      { background: #ffedd5; color: #9a3412; }
+  .tag-datetime  { background: #ffedd5; color: #9a3412; }
+  .tag-object    { background: #e0f2fe; color: #075985; }
+  .tag-array     { background: #f1f5f9; color: #334155; }
+  .tag-ep        { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+  .tag-ep-2      { background: #fdf4ff; color: #7e22ce; border: 1px solid #e9d5ff; }
+  .tag-ep-3      { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+  .tag-ep-4      { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
+  .tag-ep-5      { background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8; }
+  .match-exact   { background: #dcfce7; }
+  .match-fuzzy   { background: #fef9c3; }
+  .match-content { background: #dbeafe; }
+  .match-live    { background: #f3e8ff; }
+  .match-none    { background: #fef2f2; }
+  .drop-zone { border: 2px dashed #94a3b8; border-radius: 10px; transition: all .2s; }
+  .drop-zone.drag-over { border-color: #1d4ed8; background: #eff6ff; }
+  .path-mono { font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 13px; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #f1f5f9; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  input:focus, select:focus { outline: none; box-shadow: 0 0 0 2px #1d4ed8; }
+  .live-badge { background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- HEADER -->
+<header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-sm">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 bg-blue-700 rounded-lg flex items-center justify-center">
+      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-gray-900 leading-none">EUDAMED API Explorer</h1>
+      <p class="text-xs text-gray-500 mt-0.5">Public Devices &amp; Actors API · Unofficial reference</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-2 text-xs text-gray-500">
+    <span class="w-2 h-2 bg-green-400 rounded-full inline-block"></span>
+    <a href="https://ec.europa.eu/tools/eudamed" target="_blank" class="hover:text-blue-600">ec.europa.eu/tools/eudamed</a>
+  </div>
+</header>
+
+<!-- TABS -->
+<div class="bg-white border-b border-gray-200 px-6">
+  <nav class="flex gap-0">
+    <button onclick="switchTab('fields')" id="tab-btn-fields"
+      class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600 -mb-px">
+      Field Explorer
+    </button>
+    <button onclick="switchTab('xml')" id="tab-btn-xml"
+      class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 -mb-px">
+      XML Mapper
+    </button>
+    <button onclick="switchTab('endpoints')" id="tab-btn-endpoints"
+      class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 -mb-px">
+      Endpoints
+    </button>
+  </nav>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB: FIELD EXPLORER
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-fields" class="tab-panel">
+  <div class="flex h-[calc(100vh-113px)]">
+
+    <!-- LEFT: search + list -->
+    <div class="w-96 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
+
+      <!-- Search -->
+      <div class="p-4 border-b border-gray-100">
+        <div class="relative">
+          <svg class="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="field-search" type="text" placeholder="Fuzzy search fields…"
+            class="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50"
+            oninput="onSearch(this.value)" autocomplete="off" />
+        </div>
+        <div class="flex gap-1 mt-3 flex-wrap">
+          <button onclick="setFilter('all')" id="f-all"  class="filter-btn text-xs px-3 py-1 rounded-full border">All</button>
+          <button onclick="setFilter('ep1')" id="f-ep1" class="filter-btn text-xs px-3 py-1 rounded-full border">Devices List</button>
+          <button onclick="setFilter('ep2')" id="f-ep2" class="filter-btn text-xs px-3 py-1 rounded-full border">Device Detail</button>
+          <button onclick="setFilter('ep3')" id="f-ep3" class="filter-btn text-xs px-3 py-1 rounded-full border">Basic UDI</button>
+          <button onclick="setFilter('ep4')" id="f-ep4" class="filter-btn text-xs px-3 py-1 rounded-full border">Actor Detail</button>
+          <button onclick="setFilter('ep5')" id="f-ep5" class="filter-btn text-xs px-3 py-1 rounded-full border">Actor Search</button>
+        </div>
+      </div>
+
+      <!-- Results count -->
+      <div class="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50" id="result-count">Loading…</div>
+
+      <!-- Field list -->
+      <div class="overflow-y-auto flex-1" id="field-list"></div>
+    </div>
+
+    <!-- RIGHT: detail panel -->
+    <div class="flex-1 overflow-y-auto bg-gray-50" id="field-detail">
+      <div class="flex flex-col items-center justify-center h-full text-gray-400">
+        <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="text-sm">Select a field to see details</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB: XML MAPPER
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-xml" class="tab-panel hidden p-6 max-w-7xl mx-auto">
+
+  <div class="grid grid-cols-2 gap-6 mb-6">
+
+    <!-- XML Upload -->
+    <div>
+      <h2 class="text-sm font-semibold text-gray-700 mb-2">1. Upload your XML file</h2>
+      <div id="drop-zone" class="drop-zone p-8 text-center cursor-pointer rounded-xl"
+        onclick="document.getElementById('xml-file-input').click()"
+        ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <svg class="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <p class="text-sm text-gray-500">Drop XML here or <span class="text-blue-600 font-medium">click to browse</span></p>
+        <p class="text-xs text-gray-400 mt-1" id="xml-filename">No file selected</p>
+      </div>
+      <input type="file" id="xml-file-input" accept=".xml" class="hidden" onchange="onFileSelected(this)">
+    </div>
+
+    <!-- Live EUDAMED fetch -->
+    <div>
+      <h2 class="text-sm font-semibold text-gray-700 mb-2">2. Fetch live EUDAMED data <span class="font-normal text-gray-400">(enables value matching)</span></h2>
+      <div class="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <p class="text-xs text-gray-500">Fetch one or more real API responses. Your XML field values will be looked up in the actual EUDAMED data to find where they appear — even if the field names differ.</p>
+
+        <!-- fetch row -->
+        <div class="flex gap-2">
+          <select id="live-endpoint" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">
+            <option value="device-detail">Device Detail</option>
+            <option value="basic-udi">Basic UDI</option>
+            <option value="actor-detail">Actor Detail</option>
+            <option value="actor-search">Actor Search</option>
+          </select>
+          <input id="live-id" type="text" placeholder="UUID  ·  or search term for Actor Search"
+            class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50" />
+          <button onclick="fetchLive()" id="fetch-btn"
+            class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 whitespace-nowrap">Fetch</button>
+        </div>
+
+        <!-- loaded responses list -->
+        <div id="live-loaded" class="hidden space-y-1">
+          <div class="text-xs font-semibold text-gray-500">Loaded responses:</div>
+          <div id="live-loaded-list"></div>
+        </div>
+
+        <div id="live-status" class="text-xs text-gray-400"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mapper results -->
+  <div id="xml-results" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-700">Mapping Results</h2>
+      <div class="flex gap-3 text-xs flex-wrap justify-end">
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded match-exact inline-block"></span> Exact name</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded match-live inline-block"></span> Live value</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded match-fuzzy inline-block"></span> Fuzzy name</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded match-content inline-block"></span> Content pattern</span>
+        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded match-none inline-block"></span> No match</span>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="grid grid-cols-5 gap-3 mb-6" id="xml-summary"></div>
+
+    <!-- Filter -->
+    <div class="flex gap-2 mb-3">
+      <button onclick="setTableFilter('all')"     id="tf-all"     class="tfilter-btn text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-600">All</button>
+      <button onclick="setTableFilter('exact')"   id="tf-exact"   class="tfilter-btn text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-600">Exact</button>
+      <button onclick="setTableFilter('live')"    id="tf-live"    class="tfilter-btn text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-600">Live value</button>
+      <button onclick="setTableFilter('fuzzy')"   id="tf-fuzzy"   class="tfilter-btn text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-600">Fuzzy</button>
+      <button onclick="setTableFilter('content')" id="tf-content" class="tfilter-btn text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-600">Content</button>
+      <button onclick="setTableFilter('none')"    id="tf-none"    class="tfilter-btn text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-600">No match</button>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-600 w-8">#</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-600">XML Element / Attribute</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-600">XML Value (sample)</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-600">EUDAMED Match</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-600 w-32">Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="xml-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="xml-empty" class="text-center py-20 text-gray-400">
+    <svg class="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    <p class="text-sm">Upload an XML file to start mapping</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB: ENDPOINTS
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-endpoints" class="tab-panel hidden p-6 max-w-4xl mx-auto space-y-6"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════════════════════ -->
+<script>
+
+// ─── SCHEMA DATA ────────────────────────────────────────────────────────────
+
+const ENDPOINTS = [
+  {
+    id: 'ep1', label: 'Devices List', tagClass: 'tag-ep', method: 'GET',
+    path: '/devices/udiDiData',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    description: 'Search/list UDI-DI device records. Paginated, max 300/page.',
+    params: [
+      { name: 'page',             type: 'integer', required: true,  description: 'Page number (starts at 1)' },
+      { name: 'pageSize',         type: 'integer', required: true,  description: 'Results per page, max 300' },
+      { name: 'size',             type: 'integer', required: true,  description: 'Alias for pageSize' },
+      { name: 'languageIso2Code', type: 'string',  required: true,  description: 'Language of returned strings (e.g. "en")' },
+      { name: 'iso2Code',         type: 'string',  required: false, description: 'Alias for languageIso2Code' },
+      { name: 'basicUdiId',       type: 'string',  required: false, description: 'Filter by Basic UDI code' },
+      { name: 'primaryDI',        type: 'string',  required: false, description: 'Filter by primary DI code' },
+      { name: 'tradeName',        type: 'string',  required: false, description: 'Filter by trade name' },
+      { name: 'srn',              type: 'string',  required: false, description: 'Filter by manufacturer SRN' },
+    ],
+  },
+  {
+    id: 'ep2', label: 'Device Detail', tagClass: 'tag-ep-2', method: 'GET',
+    path: '/devices/udiDiData/{deviceId}',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    description: 'Full detail for a single UDI-DI device record.',
+    params: [
+      { name: 'deviceId',         type: 'UUID',   required: true, description: 'Device UUID (path parameter)' },
+      { name: 'languageIso2Code', type: 'string', required: true, description: 'Language of returned strings' },
+    ],
+  },
+  {
+    id: 'ep3', label: 'Basic UDI', tagClass: 'tag-ep-3', method: 'GET',
+    path: '/devices/basicUdiData/{basicUdiDiId}',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    description: 'Basic UDI-DI data including manufacturer, certificates, and classification.',
+    params: [
+      { name: 'basicUdiDiId',     type: 'UUID',   required: true, description: 'Basic UDI-DI UUID (path parameter)' },
+      { name: 'languageIso2Code', type: 'string', required: true, description: 'Language of returned strings' },
+    ],
+  },
+  {
+    id: 'ep4', label: 'Actor Detail', tagClass: 'tag-ep-4', method: 'GET',
+    path: '/actors/{actorId}/publicInformation',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    description: 'Full public information for an economic actor (manufacturer, AR, importer, distributor, NB).',
+    params: [
+      { name: 'actorId',          type: 'UUID',   required: true, description: 'Actor UUID (path parameter)' },
+      { name: 'languageIso2Code', type: 'string', required: true, description: 'Language of returned strings' },
+    ],
+  },
+  {
+    id: 'ep5', label: 'Actor Search', tagClass: 'tag-ep-5', method: 'GET',
+    path: '/eos',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api',
+    description: 'Search/list economic operators. Paginated. Note: base URL is /api not /api/v1.',
+    params: [
+      { name: 'page',             type: 'integer', required: true,  description: 'Page number (starts at 0)' },
+      { name: 'pageSize',         type: 'integer', required: true,  description: 'Results per page' },
+      { name: 'size',             type: 'integer', required: false, description: 'Alias for pageSize' },
+      { name: 'languageIso2Code', type: 'string',  required: false, description: 'Language of returned strings' },
+      { name: 'countryIso2Code',  type: 'string',  required: false, description: 'Filter by country ISO code (e.g. "DE")' },
+      { name: 'sort',             type: 'string',  required: false, description: 'Sort field and direction (e.g. "srn,ASC")' },
+      { name: 'name',             type: 'string',  required: false, description: 'Filter by actor name' },
+      { name: 'actorType',        type: 'string',  required: false, description: 'Filter by actor type code' },
+      { name: 'rnd',              type: 'integer', required: false, description: 'Random/timestamp parameter for cache-busting' },
+    ],
+  },
+];
+
+// [path, type, endpoint_id, description?]
+const RAW_FIELDS = [
+  // ── EP1: Devices List ──
+  ['content[].basicUdi',                      'string',  'ep1', 'Basic UDI code'],
+  ['content[].primaryDi',                     'string',  'ep1', 'Primary Device Identifier'],
+  ['content[].uuid',                          'uuid',    'ep1', 'Device UUID'],
+  ['content[].ulid',                          'string',  'ep1', 'Device ULID'],
+  ['content[].basicUdiDiDataUlid',            'string',  'ep1', 'ULID of the associated Basic UDI-DI record'],
+  ['content[].riskClass.code',                'string',  'ep1', 'Risk class (CLASS_I, CLASS_IIA, CLASS_IIB, CLASS_III)'],
+  ['content[].tradeName',                     'string',  'ep1', 'Device trade name'],
+  ['content[].manufacturerName',              'string',  'ep1', 'Manufacturer company name'],
+  ['content[].manufacturerSrn',               'string',  'ep1', 'Manufacturer Single Registration Number'],
+  ['content[].deviceStatusType.code',         'string',  'ep1', 'Device status (e.g. REGISTERED, ON_THE_MARKET, NO_LONGER_PLACED)'],
+  ['content[].manufacturerStatus.code',       'string',  'ep1', 'Manufacturer registration status'],
+  ['content[].latestVersion',                 'boolean', 'ep1', 'Whether this is the latest version'],
+  ['content[].versionNumber',                 'integer', 'ep1', 'Version number'],
+  ['content[].reference',                     'string',  'ep1', 'Manufacturer\'s device reference number'],
+  ['content[].authorisedRepresentativeSrn',   'string',  'ep1', 'Authorised Representative SRN'],
+  ['content[].authorisedRepresentativeName',  'string',  'ep1', 'Authorised Representative company name'],
+  ['first',                                   'boolean', 'ep1', 'Is this the first page?'],
+  ['last',                                    'boolean', 'ep1', 'Is this the last page?'],
+  ['number',                                  'integer', 'ep1', 'Current page number (0-indexed)'],
+  ['numberOfElements',                        'integer', 'ep1', 'Number of elements on this page'],
+  ['size',                                    'integer', 'ep1', 'Page size requested'],
+  ['sort',                                    'object',  'ep1', 'Sort descriptor'],
+  ['totalElements',                           'integer', 'ep1', 'Total number of matching records'],
+  ['totalPages',                              'integer', 'ep1', 'Total number of pages'],
+
+  // ── EP2: Device Detail ──
+  ['uuid',                                                     'uuid',     'ep2', 'Device UUID'],
+  ['ulid',                                                     'string',   'ep2', 'Device ULID'],
+  ['primaryDi.uuid',                                           'uuid',     'ep2', 'UUID of the primary DI record'],
+  ['primaryDi.code',                                           'string',   'ep2', 'Primary DI barcode value'],
+  ['primaryDi.issuingAgency.code',                             'string',   'ep2', 'DI issuing agency (GS1, HIBC, ICCBBA)'],
+  ['primaryDi.type',                                           'string',   'ep2', 'DI type'],
+  ['primaryDi.new',                                            'boolean',  'ep2'],
+  ['containedItem',                                            'object',   'ep2', 'Contained item information'],
+  ['marketInfoLink.uuid',                                      'uuid',     'ep2'],
+  ['marketInfoLink.ulid',                                      'string',   'ep2'],
+  ['marketInfoLink.msWhereAvailable[].uuid',                   'uuid',     'ep2'],
+  ['marketInfoLink.msWhereAvailable[].marketInfoLinkId',       'integer',  'ep2'],
+  ['marketInfoLink.msWhereAvailable[].country.name',           'string',   'ep2', 'Country where device is available'],
+  ['marketInfoLink.msWhereAvailable[].country.type',           'string',   'ep2'],
+  ['marketInfoLink.msWhereAvailable[].country.iso2Code',       'string',   'ep2', 'ISO 3166-1 alpha-2 country code'],
+  ['marketInfoLink.msWhereAvailable[].country.nonEUMemberState','boolean', 'ep2', 'Is a non-EU member state?'],
+  ['marketInfoLink.msWhereAvailable[].startDate',              'string',   'ep2', 'Start date of market availability'],
+  ['marketInfoLink.msWhereAvailable[].endDate',                'string',   'ep2', 'End date of market availability'],
+  ['marketInfoLink.msWhereAvailable[].new',                    'boolean',  'ep2'],
+  ['marketInfoLink.versionState.code',                         'string',   'ep2'],
+  ['marketInfoLink.latestVersion',                             'boolean',  'ep2'],
+  ['marketInfoLink.versionNumber',                             'integer',  'ep2'],
+  ['marketInfoLink.discardedDate',                             'string',   'ep2'],
+  ['marketInfoLink.versionDate',                               'datetime', 'ep2'],
+  ['marketInfoLink.new',                                       'boolean',  'ep2'],
+  ['secondaryDi',                                              'object',   'ep2', 'Secondary DI information'],
+  ['secondaryDiApplicable',                                    'boolean',  'ep2', 'Whether a secondary DI exists'],
+  ['additionalDescription',                                    'string',   'ep2', 'Additional device description'],
+  ['tradeName.texts[].language',                               'object',   'ep2'],
+  ['tradeName.texts[].text',                                   'string',   'ep2', 'Trade name in a specific language'],
+  ['tradeName.texts[].allLanguagesApplicable',                 'boolean',  'ep2'],
+  ['tradeNameApplicable',                                      'boolean',  'ep2'],
+  ['annexXVIApplicable',                                       'boolean',  'ep2', 'Subject to Annex XVI (non-medical purpose devices)'],
+  ['brainElectroStimulation',                                  'boolean',  'ep2', 'Device for brain electrostimulation'],
+  ['cmrSubstance',                                             'boolean',  'ep2', 'Contains CMR substance'],
+  ['cmrSubstances[]',                                          'array',    'ep2', 'List of CMR substances'],
+  ['componentDis[]',                                           'array',    'ep2', 'List of component DIs'],
+  ['contactLenses',                                            'boolean',  'ep2', 'Is a contact lens device'],
+  ['directMarking',                                            'boolean',  'ep2', 'Direct marking applies'],
+  ['directMarkingSameAsUdiDi',                                 'boolean',  'ep2', 'Direct marking DI same as UDI-DI'],
+  ['directMarkingDi',                                          'object',   'ep2', 'Direct marking DI details'],
+  ['emr',                                                      'boolean',  'ep2', 'Electromagnetic radiation device'],
+  ['endocrineDisruptingSubstances[]',                          'array',    'ep2', 'Endocrine disrupting substances'],
+  ['endocrineDisruptor',                                       'boolean',  'ep2', 'Contains endocrine disrupting substances'],
+  ['equipmentForAdiposeTissue',                                'boolean',  'ep2', 'Equipment for adipose tissue procedures'],
+  ['fillingByInjection',                                       'boolean',  'ep2', 'Device for filling by injection'],
+  ['humanProductSubstances[]',                                 'array',    'ep2', 'Human product substances'],
+  ['latex',                                                    'boolean',  'ep2', 'Contains latex'],
+  ['udiPiType.batchNumber',                                    'boolean',  'ep2', 'UDI-PI includes batch/lot number'],
+  ['udiPiType.serializationNumber',                            'boolean',  'ep2', 'UDI-PI includes serialization number'],
+  ['udiPiType.manufacturingDate',                              'boolean',  'ep2', 'UDI-PI includes manufacturing date'],
+  ['udiPiType.expirationDate',                                 'boolean',  'ep2', 'UDI-PI includes expiration date'],
+  ['udiPiType.softwareIdentification',                         'boolean',  'ep2', 'UDI-PI includes software identification'],
+  ['medicinalProductSubstances[]',                             'array',    'ep2', 'Medicinal product substances incorporated'],
+  ['cndNomenclatures[].uuid',                                  'string',   'ep2'],
+  ['cndNomenclatures[].code',                                  'string',   'ep2', 'CND nomenclature code'],
+  ['cndNomenclatures[].description.texts[].language.isoCode',  'string',   'ep2', 'ISO language code for CND description'],
+  ['cndNomenclatures[].description.texts[].language.name',     'string',   'ep2'],
+  ['cndNomenclatures[].description.texts[].text',              'string',   'ep2', 'CND description text'],
+  ['cndNomenclatures[].description.texts[].allLanguagesApplicable','boolean','ep2'],
+  ['cndNomenclatures[].gmdnNomenclatures[]',                   'array',    'ep2', 'Related GMDN nomenclatures'],
+  ['oemApplicable',                                            'boolean',  'ep2', 'OEM relationship applies'],
+  ['productDesigner',                                          'object',   'ep2', 'Product designer actor info'],
+  ['placedOnTheMarket.name',                                   'string',   'ep2', 'Country of first market placement'],
+  ['placedOnTheMarket.type',                                   'string',   'ep2'],
+  ['placedOnTheMarket.iso2Code',                               'string',   'ep2', 'ISO code of market placement country'],
+  ['placedOnTheMarket.nonEUMemberState',                       'boolean',  'ep2'],
+  ['productsToBeIntroduced',                                   'object',   'ep2'],
+  ['reference',                                                'string',   'ep2', 'Manufacturer reference / catalogue number'],
+  ['reprocessed',                                              'boolean',  'ep2', 'Is a reprocessed single-use device'],
+  ['maxNumberOfReuses',                                        'integer',  'ep2', 'Maximum number of reuses allowed'],
+  ['maxNumberOfReusesApplicable',                              'boolean',  'ep2'],
+  ['singleUse',                                                'boolean',  'ep2', 'Single-use device'],
+  ['clinicalSizeApplicable',                                   'boolean',  'ep2'],
+  ['clinicalSizes[]',                                          'array',    'ep2', 'Clinical sizes of the device'],
+  ['deviceStatus.uuid',                                        'uuid',     'ep2'],
+  ['deviceStatus.type.code',                                   'string',   'ep2', 'Status type code'],
+  ['deviceStatus.statusDate',                                  'date',     'ep2', 'Date the status was set'],
+  ['deviceStatus.new',                                         'boolean',  'ep2'],
+  ['subStatuses[]',                                            'array',    'ep2', 'Sub-status records'],
+  ['sterile',                                                  'boolean',  'ep2', 'Device supplied sterile'],
+  ['sterilization',                                            'boolean',  'ep2', 'Sterilization method specified'],
+  ['storageApplicable',                                        'boolean',  'ep2'],
+  ['storageHandlingConditions[]',                              'array',    'ep2', 'Storage and handling conditions'],
+  ['unitOfUse',                                                'object',   'ep2', 'Unit of use DI'],
+  ['criticalWarningsApplicable',                               'boolean',  'ep2'],
+  ['criticalWarnings[]',                                       'array',    'ep2', 'Critical warnings and precautions'],
+  ['additionalInformationUrl',                                 'string',   'ep2', 'URL for additional product information'],
+  ['storageSymbol',                                            'object',   'ep2', 'Storage symbol details'],
+  ['baseQuantity',                                             'integer',  'ep2', 'Base quantity of items in package'],
+  ['versionDate',                                              'datetime', 'ep2', 'Date/time this version was created'],
+  ['versionState.code',                                        'string',   'ep2', 'Version state (DRAFT, PUBLISHED)'],
+  ['latestVersion',                                            'boolean',  'ep2', 'Is this the latest version?'],
+  ['versionNumber',                                            'integer',  'ep2', 'Version number'],
+  ['newDevice',                                                'boolean',  'ep2', 'Newly registered device flag'],
+  ['discardedDate',                                            'string',   'ep2', 'Date the record was discarded'],
+  ['linkedUdiDiView',                                          'object',   'ep2', 'Linked UDI-DI record reference'],
+  ['new',                                                      'boolean',  'ep2', 'Newly created record flag'],
+
+  // ── EP3: Basic UDI Data ──
+  ['uuid',                                                          'uuid',    'ep3'],
+  ['ulid',                                                          'string',  'ep3'],
+  ['udiDiData',                                                     'object',  'ep3', 'Associated UDI-DI records'],
+  ['manufacturer.importers[]',                                      'array',   'ep3', 'List of importers for this device'],
+  ['manufacturer.nonEuManufacturers',                               'object',  'ep3', 'Non-EU manufacturer details'],
+  ['manufacturer.actorDataPublicView',                              'object',  'ep3', 'Manufacturer actor public data'],
+  ['authorisedRepresentative.nonEuManufacturerUuid',                'uuid',    'ep3'],
+  ['authorisedRepresentative.authorisedRepresentativeUuid',         'uuid',    'ep3'],
+  ['authorisedRepresentative.authorisedRepresentativeUlid',         'string',  'ep3'],
+  ['authorisedRepresentative.name',                                 'string',  'ep3', 'AR company name'],
+  ['authorisedRepresentative.srn',                                  'string',  'ep3', 'AR Single Registration Number'],
+  ['authorisedRepresentative.address',                              'string',  'ep3', 'AR address string'],
+  ['authorisedRepresentative.countryName',                          'string',  'ep3', 'AR country name'],
+  ['authorisedRepresentative.startDate',                            'date',    'ep3', 'AR mandate start date'],
+  ['authorisedRepresentative.endDate',                              'date',    'ep3', 'AR mandate end date'],
+  ['authorisedRepresentative.terminationDate',                      'string',  'ep3', 'AR mandate termination date'],
+  ['authorisedRepresentative.email',                                'string',  'ep3', 'AR contact email'],
+  ['authorisedRepresentative.telephone',                            'string',  'ep3', 'AR contact telephone'],
+  ['authorisedRepresentative.mandateStatus.code',                   'string',  'ep3', 'Mandate status code'],
+  ['authorisedRepresentative.actorStatus.code',                     'string',  'ep3', 'AR actor status code'],
+  ['authorisedRepresentative.actorStatusFromDate',                  'string',  'ep3'],
+  ['authorisedRepresentative.versionNumber',                        'integer', 'ep3'],
+  ['authorisedRepresentative.versionState.code',                    'string',  'ep3'],
+  ['authorisedRepresentative.latestVersion',                        'boolean', 'ep3'],
+  ['authorisedRepresentative.lastUpdateDate',                       'datetime','ep3'],
+  ['authorisedRepresentative.ulid',                                 'string',  'ep3'],
+  ['active',                                                        'boolean', 'ep3', 'Basic UDI record is active'],
+  ['administeringMedicine',                                         'boolean', 'ep3', 'Device administers medicinal products'],
+  ['animalTissues',                                                 'boolean', 'ep3', 'Contains animal tissues or derivatives'],
+  ['nbDecision',                                                    'object',  'ep3', 'Notified body decision details'],
+  ['basicUdi.uuid',                                                 'uuid',    'ep3'],
+  ['basicUdi.code',                                                 'string',  'ep3', 'Basic UDI barcode value'],
+  ['basicUdi.issuingAgency.code',                                   'string',  'ep3', 'Basic UDI issuing agency'],
+  ['basicUdi.type',                                                 'string',  'ep3'],
+  ['basicUdi.new',                                                  'boolean', 'ep3'],
+  ['companionDiagnostics',                                          'boolean', 'ep3', 'Companion diagnostic device'],
+  ['reagent',                                                       'boolean', 'ep3', 'IVD reagent'],
+  ['instrument',                                                    'boolean', 'ep3', 'IVD instrument'],
+  ['professionalTesting',                                           'boolean', 'ep3', 'For professional use testing'],
+  ['kit',                                                           'boolean', 'ep3', 'Is a kit'],
+  ['device',                                                        'boolean', 'ep3', 'Is a device (vs reagent/instrument)'],
+  ['multiComponent',                                                'boolean', 'ep3', 'Multi-component device'],
+  ['deviceCriterion',                                               'string',  'ep3', 'Device criterion classification'],
+  ['basicUdiType',                                                  'object',  'ep3', 'Basic UDI type information'],
+  ['deviceModel',                                                   'string',  'ep3', 'Device model name/number'],
+  ['deviceModelApplicable',                                         'boolean', 'ep3'],
+  ['deviceName',                                                    'string',  'ep3', 'Primary device name'],
+  ['humanTissues',                                                  'boolean', 'ep3', 'Contains human tissues or derivatives'],
+  ['humanProduct',                                                  'boolean', 'ep3', 'Contains human blood products'],
+  ['medicinalProduct',                                              'boolean', 'ep3', 'Incorporates a medicinal product'],
+  ['implantable',                                                   'boolean', 'ep3', 'Is an implantable device'],
+  ['sutures',                                                       'object',  'ep3', 'Suture details'],
+  ['legislation.code',                                              'string',  'ep3', 'Applicable legislation (MDR, IVDR, MDD, AIMD, IVDD)'],
+  ['legislation.legacyDirective',                                   'boolean', 'ep3', 'Is a legacy directive'],
+  ['measuringFunction',                                             'boolean', 'ep3', 'Has measuring function'],
+  ['microbialSubstances',                                           'boolean', 'ep3', 'Contains microbial substances'],
+  ['nearPatientTesting',                                            'boolean', 'ep3', 'Near-patient testing device (IVD)'],
+  ['reusable',                                                      'boolean', 'ep3', 'Is reusable'],
+  ['riskClass.code',                                                'string',  'ep3', 'Risk class (CLASS_I, CLASS_IIA, CLASS_IIB, CLASS_III, CLASS_A–D)'],
+  ['selfTesting',                                                   'boolean', 'ep3', 'Self-testing device (IVD)'],
+  ['specialDeviceType.code',                                        'string',  'ep3', 'Special device type (CUSTOM, INVESTIGATIONAL)'],
+  ['specialDeviceTypeApplicable',                                   'boolean', 'ep3'],
+  ['medicalPurpose',                                                'object',  'ep3', 'Intended medical purpose codes'],
+  ['typeExaminationApplicable',                                     'boolean', 'ep3', 'Type examination applies'],
+  ['deviceCertificateInfoList[].uuid',                              'uuid',    'ep3'],
+  ['deviceCertificateInfoList[].ulid',                              'string',  'ep3'],
+  ['deviceCertificateInfoList[].certificateExpiry',                 'date',    'ep3', 'Certificate expiry date'],
+  ['deviceCertificateInfoList[].certificateNumber',                 'string',  'ep3', 'Certificate number'],
+  ['deviceCertificateInfoList[].certificateRevision',               'string',  'ep3', 'Certificate revision'],
+  ['deviceCertificateInfoList[].notifiedBody.uuid',                 'uuid',    'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.ulid',                 'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.versionNumber',        'integer', 'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.versionState.code',    'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.latestVersion',        'boolean', 'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.lastUpdateDate',       'datetime','ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.name',                 'string',  'ep3', 'Notified body name'],
+  ['deviceCertificateInfoList[].notifiedBody.names.texts[].text',   'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.abbreviatedNames.texts[].text','string','ep3', 'NB abbreviation'],
+  ['deviceCertificateInfoList[].notifiedBody.actorType.code',       'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.actorType.srnCode',    'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.actorType.category',   'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.status.code',          'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.statusFromDate',       'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.countryIso2Code',      'string',  'ep3', 'NB country ISO code'],
+  ['deviceCertificateInfoList[].notifiedBody.countryName',          'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.countryType',          'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.geographicalAddress',  'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.electronicMail',       'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.telephone',            'string',  'ep3'],
+  ['deviceCertificateInfoList[].notifiedBody.srn',                  'string',  'ep3', 'NB Single Registration Number'],
+  ['deviceCertificateInfoList[].certificateType.code',              'string',  'ep3', 'Certificate type (EU_TYPE_EXAMINATION, EU_QMS, etc.)'],
+  ['deviceCertificateInfoList[].versionState.code',                 'string',  'ep3'],
+  ['deviceCertificateInfoList[].latestVersion',                     'boolean', 'ep3'],
+  ['deviceCertificateInfoList[].versionNumber',                     'integer', 'ep3'],
+  ['deviceCertificateInfoList[].discardedDate',                     'string',  'ep3'],
+  ['deviceCertificateInfoList[].issueDate',                         'date',    'ep3', 'Certificate issue date'],
+  ['deviceCertificateInfoList[].status.code',                       'string',  'ep3', 'Certificate status'],
+  ['deviceCertificateInfoList[].nbProvidedCertificate',             'boolean', 'ep3'],
+  ['deviceCertificateInfoList[].startingValidityDate',              'date',    'ep3', 'Certificate validity start date'],
+  ['deviceCertificateInfoList[].new',                               'boolean', 'ep3'],
+  ['clinicalInvestigationApplicable',                               'boolean', 'ep3'],
+  ['clinicalInvestigationLinks[]',                                  'array',   'ep3', 'Links to clinical investigations'],
+  ['versionDate',                                                   'datetime','ep3'],
+  ['versionState.code',                                             'string',  'ep3'],
+  ['latestVersion',                                                 'boolean', 'ep3'],
+  ['versionNumber',                                                 'integer', 'ep3'],
+  ['legacyDeviceUdiDiApplicable',                                   'boolean', 'ep3', 'Legacy UDI-DI mapping applies'],
+  ['discardedDate',                                                 'string',  'ep3'],
+  ['linkedSscp.ulid',                                               'string',  'ep3'],
+  ['linkedSscp.validated',                                          'boolean', 'ep3'],
+  ['linkedSscp.uuid',                                               'uuid',    'ep3'],
+  ['linkedSscp.referenceNumber',                                    'string',  'ep3', 'SSCP reference number'],
+  ['linkedSscp.revisionNumber',                                     'string',  'ep3', 'SSCP revision number'],
+  ['linkedSscp.issueDate',                                          'date',    'ep3'],
+  ['linkedSscp.versionNumber',                                      'integer', 'ep3'],
+  ['linkedSscp.inactive',                                           'boolean', 'ep3'],
+  ['linkedSscp.inactiveStatusDate',                                 'string',  'ep3'],
+  ['new',                                                           'boolean', 'ep3'],
+
+  // ── EP4: Actor Detail ──
+  ['importers[]',                                                               'array',    'ep4', 'List of importers'],
+  ['nonEuManufacturers',                                                        'object',   'ep4', 'Non-EU manufacturer linkages'],
+  ['actorDataPublicView.ulid',                                                  'string',   'ep4'],
+  ['actorDataPublicView.uuid',                                                  'uuid',     'ep4'],
+  ['actorDataPublicView.type.code',                                             'string',   'ep4', 'Actor type (MANUFACTURER, AR, IMPORTER, DISTRIBUTOR, NB, CA)'],
+  ['actorDataPublicView.type.srnCode',                                          'string',   'ep4', 'SRN code prefix'],
+  ['actorDataPublicView.type.category',                                         'string',   'ep4'],
+  ['actorDataPublicView.actorStatus.code',                                      'string',   'ep4', 'Registration status (REGISTERED, DEREGISTERED)'],
+  ['actorDataPublicView.actorStatusFromDate',                                   'string',   'ep4', 'Date of current status'],
+  ['actorDataPublicView.country.name',                                          'string',   'ep4', 'Actor country name'],
+  ['actorDataPublicView.country.type',                                          'string',   'ep4'],
+  ['actorDataPublicView.country.iso2Code',                                      'string',   'ep4', 'ISO 3166-1 alpha-2 country code'],
+  ['actorDataPublicView.country.nonEUMemberState',                              'boolean',  'ep4', 'Is located outside the EU'],
+  ['actorDataPublicView.name.texts[].language',                                 'object',   'ep4'],
+  ['actorDataPublicView.name.texts[].text',                                     'string',   'ep4', 'Actor name in a specific language'],
+  ['actorDataPublicView.name.texts[].allLanguagesApplicable',                   'boolean',  'ep4'],
+  ['actorDataPublicView.abbreviatedName',                                       'object',   'ep4', 'Abbreviated actor name'],
+  ['actorDataPublicView.europeanVatNumberApplicable',                           'boolean',  'ep4'],
+  ['actorDataPublicView.europeanVatNumber',                                     'string',   'ep4', 'European VAT number'],
+  ['actorDataPublicView.eudamedIdentifier',                                     'string',   'ep4', 'EUDAMED SRN (Single Registration Number)'],
+  ['actorDataPublicView.tradeRegister',                                         'string',   'ep4', 'National trade register number'],
+  ['actorDataPublicView.eori',                                                  'string',   'ep4', 'EORI number'],
+  ['actorDataPublicView.organizationIdentificationDocuments[]',                 'array',    'ep4', 'Official identification documents'],
+  ['actorDataPublicView.authorisedRepresentatives[]',                           'array',    'ep4', 'List of ARs for non-EU manufacturers'],
+  ['actorDataPublicView.competentAuthorityResponsibility',                      'object',   'ep4', 'Competent authority responsible'],
+  ['actorDataPublicView.telephone',                                             'string',   'ep4', 'Contact telephone'],
+  ['actorDataPublicView.electronicMail',                                        'string',   'ep4', 'Contact email'],
+  ['actorDataPublicView.website',                                               'string',   'ep4', 'Company website URL'],
+  ['actorDataPublicView.actorAddress.streetName',                               'string',   'ep4', 'Street name'],
+  ['actorDataPublicView.actorAddress.streetInfoApplicable',                     'boolean',  'ep4'],
+  ['actorDataPublicView.actorAddress.buildingNumber',                           'string',   'ep4', 'Building number'],
+  ['actorDataPublicView.actorAddress.complement',                               'string',   'ep4', 'Address complement'],
+  ['actorDataPublicView.actorAddress.postbox',                                  'string',   'ep4', 'PO Box'],
+  ['actorDataPublicView.actorAddress.gps',                                      'string',   'ep4', 'GPS coordinates'],
+  ['actorDataPublicView.actorAddress.cityName',                                 'string',   'ep4', 'City name'],
+  ['actorDataPublicView.actorAddress.postalZone',                               'string',   'ep4', 'Postal/ZIP code'],
+  ['actorDataPublicView.actorAddress.country.name',                             'string',   'ep4'],
+  ['actorDataPublicView.actorAddress.country.type',                             'string',   'ep4'],
+  ['actorDataPublicView.actorAddress.country.iso2Code',                         'string',   'ep4'],
+  ['actorDataPublicView.actorAddress.country.nonEUMemberState',                 'boolean',  'ep4'],
+  ['actorDataPublicView.validatorName',                                         'string',   'ep4', 'Validating CA name'],
+  ['actorDataPublicView.validatorUuid',                                         'uuid',     'ep4'],
+  ['actorDataPublicView.validatorType.code',                                    'string',   'ep4'],
+  ['actorDataPublicView.validatorType.srnCode',                                 'string',   'ep4'],
+  ['actorDataPublicView.validatorType.category',                                'string',   'ep4'],
+  ['actorDataPublicView.validatorSrn',                                          'string',   'ep4', 'Validator SRN'],
+  ['actorDataPublicView.validatorAddress.streetName',                           'string',   'ep4'],
+  ['actorDataPublicView.validatorAddress.buildingNumber',                       'string',   'ep4'],
+  ['actorDataPublicView.validatorAddress.cityName',                             'string',   'ep4'],
+  ['actorDataPublicView.validatorAddress.postalZone',                           'string',   'ep4'],
+  ['actorDataPublicView.validatorAddress.country.iso2Code',                     'string',   'ep4'],
+  ['actorDataPublicView.validatorEmail',                                        'string',   'ep4'],
+  ['actorDataPublicView.validatorTelephone',                                    'string',   'ep4'],
+  ['actorDataPublicView.regulatoryComplianceResponsibles[].firstName',          'string',   'ep4', 'RCR first name'],
+  ['actorDataPublicView.regulatoryComplianceResponsibles[].familyName',         'string',   'ep4', 'RCR family name'],
+  ['actorDataPublicView.regulatoryComplianceResponsibles[].electronicMail',     'string',   'ep4', 'RCR email'],
+  ['actorDataPublicView.regulatoryComplianceResponsibles[].telephone',          'string',   'ep4', 'RCR telephone'],
+  ['actorDataPublicView.regulatoryComplianceResponsibles[].position',           'string',   'ep4', 'RCR job position'],
+  ['actorDataPublicView.regulatoryComplianceResponsibles[].geographicalAddress','object',   'ep4', 'RCR address'],
+  ['actorDataPublicView.legislationLinks',                                      'object',   'ep4', 'Links to applicable legislation'],
+  ['actorDataPublicView.latestSubsidiary',                                      'object',   'ep4'],
+  ['actorDataPublicView.certificates',                                          'object',   'ep4', 'Certificates held by this actor'],
+  ['actorDataPublicView.latestVersion',                                         'boolean',  'ep4'],
+  ['actorDataPublicView.versionNumber',                                         'integer',  'ep4'],
+  ['actorDataPublicView.versionState.code',                                     'string',   'ep4'],
+  ['actorDataPublicView.lastUpdateDate',                                        'datetime', 'ep4', 'Last update timestamp'],
+  ['actorDataPublicView.accuracyData[]',                                        'array',    'ep4', 'Accuracy/attestation data'],
+  ['actorDataPublicView.lastAccuracyDate',                                      'string',   'ep4', 'Date of last accuracy attestation'],
+
+  // ── EP5: Actor Search ──
+  ['content[].uuid',                                    'uuid',    'ep5', 'Actor UUID'],
+  ['content[].ulid',                                    'string',  'ep5', 'Actor ULID'],
+  ['content[].name',                                    'string',  'ep5', 'Actor name (default language)'],
+  ['content[].names.texts[].language.isoCode',          'string',  'ep5', 'ISO language code'],
+  ['content[].names.texts[].language.name',             'string',  'ep5', 'Language name'],
+  ['content[].names.texts[].text',                      'string',  'ep5', 'Actor name in specific language'],
+  ['content[].names.texts[].allLanguagesApplicable',    'boolean', 'ep5'],
+  ['content[].names.textByDefaultLanguage',             'string',  'ep5', 'Name in system default language'],
+  ['content[].actorType.code',                          'string',  'ep5', 'Actor type (MANUFACTURER, AR, IMPORTER, DISTRIBUTOR, NB, CA)'],
+  ['content[].actorType.srnCode',                       'string',  'ep5', 'SRN code prefix for this actor type'],
+  ['content[].actorType.category',                      'string',  'ep5', 'Actor type category'],
+  ['content[].actorStatus.code',                        'string',  'ep5', 'Registration status (REGISTERED, DEREGISTERED)'],
+  ['content[].actorStatusFromDate',                     'string',  'ep5', 'Date current status was set'],
+  ['content[].roleName',                                'string',  'ep5', 'Human-readable role/type name'],
+  ['content[].countryIso2Code',                         'string',  'ep5', 'ISO 3166-1 alpha-2 country code'],
+  ['content[].countryName',                             'string',  'ep5', 'Country name'],
+  ['content[].countryType',                             'string',  'ep5', 'Country type (EU_MEMBER, EEA, etc.)'],
+  ['content[].dateOfRegistration',                      'string',  'ep5', 'EUDAMED registration date'],
+  ['content[].eudamedIdentifier',                       'string',  'ep5', 'SRN (Single Registration Number)'],
+  ['content[].srn',                                     'string',  'ep5', 'SRN alias — same as eudamedIdentifier'],
+  ['content[].electronicMail',                          'string',  'ep5', 'Contact email address'],
+  ['content[].telephone',                               'string',  'ep5', 'Contact telephone'],
+  ['content[].geographicalAddress',                     'string',  'ep5', 'Formatted geographical address string'],
+  ['content[].buildingNumber',                          'string',  'ep5', 'Building number'],
+  ['content[].streetName',                              'string',  'ep5', 'Street name'],
+  ['content[].postbox',                                 'string',  'ep5', 'PO Box'],
+  ['content[].addressComplement',                       'string',  'ep5', 'Address complement / additional info'],
+  ['content[].postalZone',                              'string',  'ep5', 'Postal/ZIP code'],
+  ['content[].cityName',                                'string',  'ep5', 'City name'],
+  ['content[].abbreviatedName',                         'string',  'ep5', 'Abbreviated actor name'],
+  ['content[].abbreviatedNames.texts[].text',           'string',  'ep5', 'Abbreviated name in a specific language'],
+  ['content[].latestVersion',                           'boolean', 'ep5', 'Is this the latest version?'],
+  ['content[].versionNumber',                           'integer', 'ep5', 'Version number'],
+  ['content[].associatedToUser',                        'boolean', 'ep5', 'Is associated to the requesting user?'],
+  ['content[].registrationUlid',                        'string',  'ep5', 'ULID of the registration record'],
+  ['content[].legislationLinks',                        'object',  'ep5', 'Links to applicable legislation'],
+  ['content[].selectable',                              'boolean', 'ep5', 'Can be selected in UI context'],
+  ['content[].actorValidated',                          'boolean', 'ep5', 'Has been validated by a CA'],
+  ['content[].nbStatus',                                'object',  'ep5', 'Notified body status (if applicable)'],
+  ['pageable.sort',                                     'array',   'ep5', 'Sort descriptors'],
+  ['pageable.offset',                                   'integer', 'ep5', 'Offset of this page'],
+  ['pageable.pageSize',                                 'integer', 'ep5', 'Page size'],
+  ['pageable.pageNumber',                               'integer', 'ep5', 'Page number (0-indexed)'],
+  ['pageable.paged',                                    'boolean', 'ep5'],
+  ['pageable.unpaged',                                  'boolean', 'ep5'],
+  ['first',                                             'boolean', 'ep5', 'Is this the first page?'],
+  ['last',                                              'boolean', 'ep5', 'Is this the last page?'],
+  ['number',                                            'integer', 'ep5', 'Current page number'],
+  ['numberOfElements',                                  'integer', 'ep5', 'Number of elements on this page'],
+  ['size',                                              'integer', 'ep5', 'Page size'],
+  ['totalElements',                                     'integer', 'ep5', 'Total number of matching actors'],
+  ['totalPages',                                        'integer', 'ep5', 'Total number of pages'],
+  ['empty',                                             'boolean', 'ep5', 'Is the result set empty?'],
+];
+
+// Build field objects
+const FIELDS = RAW_FIELDS.map((f, i) => {
+  const [path, type, epId, description] = f;
+  const segments = path.replace(/\[\]/g, '').split('.');
+  const leafName = segments[segments.length - 1];
+  const ep = ENDPOINTS.find(e => e.id === epId);
+  return { id: i, path, leafName, type, epId, epLabel: ep.label, epPath: ep.path, description: description || '', tagClass: ep.tagClass };
+});
+
+const fuse = new Fuse(FIELDS, {
+  keys: [{ name: 'path', weight: 0.5 }, { name: 'leafName', weight: 0.3 }, { name: 'description', weight: 0.2 }],
+  threshold: 0.4, includeScore: true, minMatchCharLength: 2, ignoreLocation: true,
+});
+
+const xmlFuse = new Fuse(FIELDS, {
+  keys: [{ name: 'path', weight: 0.5 }, { name: 'leafName', weight: 0.5 }],
+  threshold: 0.35, includeScore: true, minMatchCharLength: 2, ignoreLocation: true,
+});
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let currentFilter  = 'all';
+let currentQuery   = '';
+let selectedField  = null;
+let tableFilter    = 'all';
+
+// Live data: array of { label, flat } where flat = { path: value } map
+let liveResponses  = [];
+// Merged flat map across all loaded responses
+let liveFlatMerged = {};
+
+// Cache of last parsed XML fields for re-rendering after a new fetch
+let cachedXmlFields = null;
+
+// ─── FIELD EXPLORER ──────────────────────────────────────────────────────────
+
+function getFilteredFields() {
+  let results;
+  if (currentQuery.trim().length < 2) {
+    results = FIELDS.filter(f => currentFilter === 'all' || f.epId === currentFilter);
+  } else {
+    const raw = fuse.search(currentQuery);
+    results = raw.map(r => r.item).filter(f => currentFilter === 'all' || f.epId === currentFilter);
+  }
+  return results;
+}
+
+function renderFieldList() {
+  const fields = getFilteredFields();
+  const list = document.getElementById('field-list');
+  document.getElementById('result-count').textContent = `${fields.length} field${fields.length !== 1 ? 's' : ''} found`;
+
+  if (fields.length === 0) {
+    list.innerHTML = `<div class="p-6 text-sm text-gray-400 text-center">No fields match your search</div>`;
+    return;
+  }
+
+  list.innerHTML = fields.map(f => `
+    <div class="field-row px-4 py-2.5 border-b border-gray-50 flex items-start gap-2 ${selectedField?.id === f.id ? 'active' : ''}"
+         onclick="selectField(${f.id})">
+      <div class="flex-1 min-w-0">
+        <div class="path-mono text-gray-800 truncate text-xs leading-5">${escHtml(f.path)}</div>
+        ${f.description ? `<div class="text-xs text-gray-400 truncate mt-0.5">${f.description}</div>` : ''}
+      </div>
+      <div class="flex flex-col items-end gap-1 flex-shrink-0">
+        <span class="tag tag-${f.type}">${f.type}</span>
+        <span class="tag ${f.tagClass}" style="font-size:10px">${f.epLabel}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function selectField(id) {
+  selectedField = FIELDS.find(f => f.id === id);
+  renderFieldList();
+  renderFieldDetail();
+}
+
+function renderFieldDetail() {
+  const el = document.getElementById('field-detail');
+  if (!selectedField) return;
+  const f = selectedField;
+  const ep = ENDPOINTS.find(e => e.id === f.epId);
+
+  const parentPath = f.path.includes('.') ? f.path.substring(0, f.path.lastIndexOf('.')) : null;
+  const siblings = parentPath
+    ? FIELDS.filter(x => x.path.startsWith(parentPath + '.') && x.id !== f.id && x.path.split('.').length === f.path.split('.').length)
+    : [];
+
+  el.innerHTML = `
+    <div class="p-6">
+      <div class="mb-6">
+        <div class="path-mono text-lg font-semibold text-gray-900 break-all mb-1">${escHtml(f.path)}</div>
+        ${f.description ? `<p class="text-sm text-gray-600">${escHtml(f.description)}</p>` : ''}
+        <div class="flex gap-2 flex-wrap mt-3">
+          <span class="tag tag-${f.type} text-sm px-3 py-1">${f.type}</span>
+          <span class="tag ${f.tagClass} text-sm px-3 py-1">${f.epLabel}</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="bg-white border border-gray-200 rounded-xl p-4">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Endpoint</div>
+          <div class="text-sm font-medium text-gray-900">${ep.method} ${ep.path}</div>
+          <div class="text-xs text-gray-500 mt-1">${ep.description}</div>
+        </div>
+        <div class="bg-white border border-gray-200 rounded-xl p-4">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Leaf field name</div>
+          <div class="path-mono text-sm font-semibold text-gray-900">${escHtml(f.leafName)}</div>
+          <div class="text-xs text-gray-500 mt-1">Full path: ${escHtml(f.path)}</div>
+        </div>
+      </div>
+
+      ${f.path.includes('[]') ? `
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800">
+        <strong>Array field</strong> — inside an array. <code>[]</code> means items in a list.
+      </div>` : ''}
+
+      ${siblings.length > 0 ? `
+      <div class="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Sibling fields at same level</div>
+        <div class="space-y-1">
+          ${siblings.slice(0, 8).map(s => `
+            <div class="flex items-center gap-2 cursor-pointer hover:text-blue-600" onclick="selectField(${s.id})">
+              <span class="path-mono text-xs text-gray-700">${escHtml(s.path)}</span>
+              <span class="tag tag-${s.type} ml-auto">${s.type}</span>
+            </div>`).join('')}
+          ${siblings.length > 8 ? `<div class="text-xs text-gray-400">… and ${siblings.length - 8} more</div>` : ''}
+        </div>
+      </div>` : ''}
+
+      <div class="bg-white border border-gray-200 rounded-xl p-4">
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Same leaf name in other endpoints</div>
+        ${(() => {
+          const same = FIELDS.filter(x => x.leafName === f.leafName && x.id !== f.id);
+          return same.length === 0
+            ? '<div class="text-xs text-gray-400">Only in this endpoint</div>'
+            : same.map(s => `
+              <div class="flex items-center gap-2 cursor-pointer hover:text-blue-600 mb-1" onclick="selectField(${s.id})">
+                <span class="path-mono text-xs text-gray-700">${escHtml(s.path)}</span>
+                <span class="tag ${s.tagClass} ml-auto">${s.epLabel}</span>
+              </div>`).join('');
+        })()}
+      </div>
+    </div>
+  `;
+}
+
+function onSearch(val) { currentQuery = val; renderFieldList(); }
+
+const filterMap = { all: 'f-all', ep1: 'f-ep1', ep2: 'f-ep2', ep3: 'f-ep3', ep4: 'f-ep4', ep5: 'f-ep5' };
+function setFilter(f) {
+  currentFilter = f;
+  Object.values(filterMap).forEach(id => {
+    const btn = document.getElementById(id);
+    btn.classList.remove('bg-blue-600','text-white','border-blue-600');
+    btn.classList.add('border-gray-200','text-gray-600');
+  });
+  const active = document.getElementById(filterMap[f]);
+  active.classList.add('bg-blue-600','text-white','border-blue-600');
+  active.classList.remove('border-gray-200','text-gray-600');
+  renderFieldList();
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('border-blue-600','text-blue-600');
+    b.classList.add('border-transparent','text-gray-500');
+  });
+  document.getElementById('tab-' + name).classList.remove('hidden');
+  const btn = document.getElementById('tab-btn-' + name);
+  btn.classList.add('border-blue-600','text-blue-600');
+  btn.classList.remove('border-transparent','text-gray-500');
+}
+
+// ─── LIVE DATA HELPERS ────────────────────────────────────────────────────────
+
+function flattenJson(obj, prefix) {
+  const result = {};
+  if (obj === null || obj === undefined) return result;
+  if (typeof obj !== 'object') { result[prefix] = String(obj); return result; }
+  if (Array.isArray(obj)) {
+    obj.forEach((item, i) => Object.assign(result, flattenJson(item, `${prefix}[${i}]`)));
+  } else {
+    for (const [key, val] of Object.entries(obj)) {
+      const newKey = prefix ? `${prefix}.${key}` : key;
+      Object.assign(result, flattenJson(val, newKey));
+    }
+  }
+  return result;
+}
+
+function rebuildLiveFlat() {
+  liveFlatMerged = {};
+  liveResponses.forEach(r => Object.assign(liveFlatMerged, r.flat));
+}
+
+function liveValueMatches(xmlValues) {
+  if (!Object.keys(liveFlatMerged).length) return [];
+  const results = [];
+  const seen = new Set();
+  for (const xmlVal of xmlValues) {
+    const v = String(xmlVal).trim();
+    if (v.length < 2) continue;
+    const vLow = v.toLowerCase();
+    for (const [eudamedPath, eudamedVal] of Object.entries(liveFlatMerged)) {
+      if (String(eudamedVal).toLowerCase() === vLow) {
+        const key = eudamedPath + '=' + eudamedVal;
+        if (!seen.has(key)) {
+          seen.add(key);
+          // Find the matching schema field definition
+          const cleanPath = eudamedPath.replace(/\[\d+\]/g, '[]');
+          const fieldDef = FIELDS.find(f => f.path === cleanPath) || null;
+          results.push({ eudamedPath, eudamedValue: eudamedVal, fieldDef });
+        }
+      }
+    }
+  }
+  return results;
+}
+
+// ─── XML MAPPER ──────────────────────────────────────────────────────────────
+
+function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+function onDragLeave() { document.getElementById('drop-zone').classList.remove('drag-over'); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processXmlFile(file);
+}
+function onFileSelected(input) { if (input.files[0]) processXmlFile(input.files[0]); }
+
+function processXmlFile(file) {
+  document.getElementById('xml-filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(e.target.result, 'text/xml');
+      const parseError = doc.querySelector('parsererror');
+      if (parseError) { alert('XML parse error: ' + parseError.textContent); return; }
+      cachedXmlFields = extractXmlFields(doc);
+      renderXmlResults(cachedXmlFields);
+    } catch (err) { alert('Error processing XML: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+function extractXmlFields(doc) {
+  const fields = new Map();
+
+  function walk(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const name = node.localName || node.nodeName.replace(/^.*:/, '');
+    if (name === 'parsererror') return;
+
+    if (!fields.has(name)) fields.set(name, { name, values: [], count: 0 });
+    const entry = fields.get(name);
+    entry.count++;
+    const text = Array.from(node.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE)
+      .map(n => n.textContent.trim()).join('').trim();
+    if (text && entry.values.length < 5) entry.values.push(text);
+
+    Array.from(node.attributes || []).forEach(attr => {
+      const key = `@${attr.name}`;
+      if (!fields.has(key)) fields.set(key, { name: key, values: [], count: 0, isAttr: true });
+      const ae = fields.get(key);
+      ae.count++;
+      if (attr.value && ae.values.length < 5) ae.values.push(attr.value);
+    });
+
+    Array.from(node.childNodes).forEach(walk);
+  }
+  walk(doc.documentElement);
+  return Array.from(fields.values());
+}
+
+function matchXmlField(xmlField) {
+  const name = xmlField.name.replace(/^@/, '');
+  const vals  = xmlField.values;
+
+  // 1. Live value match (highest specificity when live data is loaded)
+  if (Object.keys(liveFlatMerged).length) {
+    const liveMatches = liveValueMatches(vals);
+    if (liveMatches.length > 0) return { type: 'live', liveMatches, matches: liveMatches.map(m => m.fieldDef).filter(Boolean), score: 1.0 };
+  }
+
+  // 2. Exact leaf name match
+  const exact = FIELDS.filter(f => f.leafName.toLowerCase() === name.toLowerCase());
+  if (exact.length > 0) return { type: 'exact', matches: exact, score: 1.0 };
+
+  // 3. Fuzzy name match
+  const fuzzy = xmlFuse.search(name);
+  if (fuzzy.length > 0 && fuzzy[0].score < 0.25) {
+    return { type: 'fuzzy', matches: fuzzy.map(r => r.item), score: Math.round((1 - fuzzy[0].score) * 100) / 100 };
+  }
+
+  // 4. Content pattern match
+  if (vals.length > 0) {
+    const contentMatches = contentPatternMatch(vals[0]);
+    if (contentMatches.length > 0) return { type: 'content', matches: contentMatches, score: 0.5 };
+  }
+
+  return { type: 'none', matches: [], score: 0 };
+}
+
+function contentPatternMatch(value) {
+  if (!value) return [];
+  const v = String(value).trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v))
+    return FIELDS.filter(f => f.type === 'uuid').slice(0, 5);
+  if (/^\d{4}-\d{2}-\d{2}/.test(v))
+    return FIELDS.filter(f => f.type === 'date' || f.type === 'datetime').slice(0, 5);
+  if (/^(true|false)$/i.test(v))
+    return FIELDS.filter(f => f.type === 'boolean').slice(0, 5);
+  if (/^[A-Z]{2}$/.test(v) && ['DE','FR','NL','BE','IT','ES','PL','SE','DK','AT','CH','GB','US','IE','PT','FI','NO'].includes(v))
+    return FIELDS.filter(f => f.leafName.toLowerCase().includes('iso2') || f.leafName.toLowerCase().includes('countrycode'));
+  if (/^(CLASS_I{1,3}|CLASS_II[AB]|CLASS_[ABCD])$/.test(v))
+    return FIELDS.filter(f => f.leafName === 'code' && f.path.includes('riskClass'));
+  if (/^(MDR|IVDR|MDD|AIMD|IVDD)$/.test(v))
+    return FIELDS.filter(f => f.path.includes('legislation'));
+  if (/^MF-[A-Z0-9-]+$/.test(v) || /^AR-[A-Z0-9-]+$/.test(v) || /^IM-[A-Z0-9-]+$/.test(v))
+    return FIELDS.filter(f => f.leafName === 'srn' || f.leafName === 'eudamedIdentifier' || f.leafName === 'manufacturerSrn');
+  return [];
+}
+
+let tableFilterValue = 'all';
+function setTableFilter(f) {
+  tableFilterValue = f;
+  document.querySelectorAll('.tfilter-btn').forEach(b => {
+    b.classList.remove('bg-blue-600','text-white','border-blue-600');
+    b.classList.add('border-gray-200','text-gray-600');
+  });
+  const btn = document.getElementById('tf-' + f);
+  if (btn) { btn.classList.add('bg-blue-600','text-white','border-blue-600'); btn.classList.remove('border-gray-200','text-gray-600'); }
+  if (cachedXmlFields) renderXmlResults(cachedXmlFields);
+}
+
+function renderXmlResults(xmlFields) {
+  document.getElementById('xml-empty').classList.add('hidden');
+  document.getElementById('xml-results').classList.remove('hidden');
+
+  const mappings = xmlFields.map(f => ({ field: f, match: matchXmlField(f) }));
+  const counts = { exact: 0, live: 0, fuzzy: 0, content: 0, none: 0 };
+  mappings.forEach(m => counts[m.match.type]++);
+
+  document.getElementById('xml-summary').innerHTML = [
+    { label: 'Exact name',      key: 'exact',   cls: 'match-exact' },
+    { label: 'Live value',      key: 'live',    cls: 'match-live' },
+    { label: 'Fuzzy name',      key: 'fuzzy',   cls: 'match-fuzzy' },
+    { label: 'Content pattern', key: 'content', cls: 'match-content' },
+    { label: 'No match',        key: 'none',    cls: 'match-none' },
+  ].map(s => `
+    <div class="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:opacity-80 ${s.cls}" onclick="setTableFilter('${s.key}')">
+      <div class="text-2xl font-bold text-gray-900">${counts[s.key]}</div>
+      <div class="text-xs text-gray-600 mt-1">${s.label}</div>
+      <div class="text-xs text-gray-400">${xmlFields.length ? Math.round(counts[s.key] / xmlFields.length * 100) : 0}%</div>
+    </div>
+  `).join('');
+
+  const filtered = tableFilterValue === 'all' ? mappings : mappings.filter(m => m.match.type === tableFilterValue);
+
+  const BADGE = {
+    exact:   'bg-green-100 text-green-800',
+    live:    'live-badge',
+    fuzzy:   'bg-yellow-100 text-yellow-800',
+    content: 'bg-blue-100 text-blue-800',
+    none:    'bg-red-100 text-red-800',
+  };
+  const LABEL = { exact: 'Exact', live: 'Live value', fuzzy: 'Fuzzy', content: 'Pattern', none: 'No match' };
+
+  document.getElementById('xml-table-body').innerHTML = filtered.map((m, i) => {
+    const { field, match } = m;
+    const sampleVal = field.values[0] || '—';
+
+    let matchCell = '<span class="text-xs text-gray-400">—</span>';
+    if (match.type === 'live' && match.liveMatches?.length > 0) {
+      const lm = match.liveMatches[0];
+      matchCell = `
+        <div class="path-mono text-xs font-semibold text-purple-800">${escHtml(lm.eudamedPath)}</div>
+        <div class="text-xs text-purple-600 mt-0.5">value: <span class="font-mono">${escHtml(String(lm.eudamedValue).slice(0,60))}</span></div>
+        ${lm.fieldDef ? `<div class="flex gap-1 mt-1"><span class="tag ${lm.fieldDef.tagClass}">${lm.fieldDef.epLabel}</span><span class="tag tag-${lm.fieldDef.type}">${lm.fieldDef.type}</span></div>` : ''}
+        ${match.liveMatches.length > 1 ? `<div class="text-xs text-gray-400 mt-1">+${match.liveMatches.length - 1} more</div>` : ''}
+      `;
+    } else if (match.matches.length > 0) {
+      const top = match.matches[0];
+      matchCell = `
+        <div class="path-mono text-xs text-gray-800 font-medium">${escHtml(top.path)}</div>
+        ${top.tagClass ? `<div class="flex gap-1 mt-1"><span class="tag ${top.tagClass}">${top.epLabel}</span><span class="tag tag-${top.type}">${top.type}</span></div>` : ''}
+        ${match.matches.length > 1 ? `<div class="text-xs text-gray-400 mt-1">+${match.matches.length - 1} more</div>` : ''}
+      `;
+    }
+
+    return `
+      <tr class="border-b border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2.5 text-xs text-gray-400">${i + 1}</td>
+        <td class="px-4 py-2.5">
+          <div class="path-mono text-xs font-medium text-gray-800">${escHtml(field.name)}</div>
+          ${field.count > 1 ? `<div class="text-xs text-gray-400">${field.count}× in XML</div>` : ''}
+        </td>
+        <td class="px-4 py-2.5">
+          <div class="path-mono text-xs text-gray-600 max-w-[180px] truncate" title="${escHtml(sampleVal)}">${escHtml(sampleVal)}</div>
+          ${field.values.length > 1 ? `<div class="text-xs text-gray-400">${field.values.length} distinct values</div>` : ''}
+        </td>
+        <td class="px-4 py-2.5">${matchCell}</td>
+        <td class="px-4 py-2.5">
+          <span class="text-xs font-semibold px-2 py-1 rounded-full ${BADGE[match.type]}">${LABEL[match.type]}</span>
+          ${match.score > 0 && match.type !== 'none' ? `<div class="text-xs text-gray-400 mt-1">${Math.round(match.score * 100)}%</div>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ─── LIVE FETCH ───────────────────────────────────────────────────────────────
+
+async function fetchLive() {
+  const epKey  = document.getElementById('live-endpoint').value;
+  const id     = document.getElementById('live-id').value.trim();
+  const status = document.getElementById('live-status');
+  const btn    = document.getElementById('fetch-btn');
+
+  if (!id) { status.textContent = 'Enter a UUID or search term.'; return; }
+
+  const BASE_V1  = 'https://ec.europa.eu/tools/eudamed/api/v1';
+  const BASE_EOS = 'https://ec.europa.eu/tools/eudamed/api';
+
+  const urlMap = {
+    'device-detail':  `${BASE_V1}/devices/udiDiData/${id}?languageIso2Code=en`,
+    'basic-udi':      `${BASE_V1}/devices/basicUdiData/${id}?languageIso2Code=en`,
+    'actor-detail':   `${BASE_V1}/actors/${id}/publicInformation?languageIso2Code=en`,
+    'actor-search':   `${BASE_EOS}/eos?languageIso2Code=en&page=1&pageSize=10&size=10&name=${encodeURIComponent(id)}`,
+  };
+  const labelMap = {
+    'device-detail': `Device ${id.slice(0,8)}…`,
+    'basic-udi':     `BasicUDI ${id.slice(0,8)}…`,
+    'actor-detail':  `Actor ${id.slice(0,8)}…`,
+    'actor-search':  `Search "${id}"`,
+  };
+
+  btn.disabled = true; btn.textContent = '…';
+  status.className = 'text-xs text-gray-400';
+  status.textContent = 'Fetching from EUDAMED…';
+
+  try {
+    const res = await fetch(urlMap[epKey], { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`);
+    const data = await res.json();
+    const flat = flattenJson(data, '');
+
+    liveResponses.push({ label: labelMap[epKey], epKey, flat });
+    rebuildLiveFlat();
+
+    status.textContent = `✓ Loaded. ${Object.keys(flat).length} values indexed.`;
+    status.className = 'text-xs text-green-600';
+    renderLoadedList();
+
+    // Re-render XML results if XML is already loaded
+    if (cachedXmlFields) renderXmlResults(cachedXmlFields);
+
+  } catch (err) {
+    status.textContent = `✗ ${err.message}`;
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      status.textContent += ' — EUDAMED blocks direct browser requests (CORS). Try a CORS proxy or run this locally with a proxy.';
+    }
+    status.className = 'text-xs text-red-500';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Fetch';
+  }
+}
+
+function renderLoadedList() {
+  const el = document.getElementById('live-loaded');
+  const list = document.getElementById('live-loaded-list');
+  if (!liveResponses.length) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  list.innerHTML = liveResponses.map((r, i) => `
+    <div class="flex items-center gap-2 text-xs">
+      <span class="w-2 h-2 bg-purple-400 rounded-full flex-shrink-0"></span>
+      <span class="text-gray-700">${escHtml(r.label)}</span>
+      <span class="text-gray-400">(${Object.keys(r.flat).length} values)</span>
+      <button onclick="removeLive(${i})" class="ml-auto text-red-400 hover:text-red-600">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeLive(i) {
+  liveResponses.splice(i, 1);
+  rebuildLiveFlat();
+  renderLoadedList();
+  if (cachedXmlFields) renderXmlResults(cachedXmlFields);
+}
+
+// ─── ENDPOINTS TAB ────────────────────────────────────────────────────────────
+
+function renderEndpointsTab() {
+  const el = document.getElementById('tab-endpoints');
+  el.innerHTML = ENDPOINTS.map(ep => {
+    const fields = FIELDS.filter(f => f.epId === ep.id);
+    return `
+      <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div class="p-5 border-b border-gray-100">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-mono text-xs font-bold px-2 py-1 bg-green-100 text-green-800 rounded">${ep.method}</span>
+            <code class="text-sm font-semibold text-gray-900">${ep.path}</code>
+            <span class="tag ${ep.tagClass} ml-auto">${ep.label}</span>
+          </div>
+          <p class="text-sm text-gray-600">${ep.description}</p>
+          <div class="text-xs text-gray-400 mt-1 font-mono">${ep.baseUrl}${ep.path}</div>
+        </div>
+
+        <div class="p-5 border-b border-gray-100">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Query Parameters</div>
+          <table class="w-full text-sm">
+            <thead><tr class="text-left border-b border-gray-100">
+              <th class="pb-2 text-xs font-semibold text-gray-500 w-1/4">Parameter</th>
+              <th class="pb-2 text-xs font-semibold text-gray-500 w-24">Type</th>
+              <th class="pb-2 text-xs font-semibold text-gray-500 w-20">Required</th>
+              <th class="pb-2 text-xs font-semibold text-gray-500">Description</th>
+            </tr></thead>
+            <tbody>${ep.params.map(p => `
+              <tr class="border-b border-gray-50">
+                <td class="py-2 path-mono text-xs text-gray-800">${p.name}</td>
+                <td class="py-2"><span class="tag tag-${p.type}">${p.type}</span></td>
+                <td class="py-2 text-xs">${p.required ? '<span class="text-red-500 font-medium">required</span>' : '<span class="text-gray-400">optional</span>'}</td>
+                <td class="py-2 text-xs text-gray-600">${p.description}</td>
+              </tr>`).join('')}</tbody>
+          </table>
+        </div>
+
+        <div class="p-5">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Response Fields <span class="text-gray-400 font-normal">(${fields.length})</span>
+          </div>
+          <div class="grid grid-cols-2 gap-1">
+            ${fields.map(f => `
+              <div class="flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50 cursor-pointer"
+                onclick="switchTab('fields'); selectField(${f.id}); setTimeout(()=>{document.getElementById('field-search').value=''; onSearch('');}, 50)">
+                <span class="path-mono text-xs text-gray-700 truncate flex-1">${escHtml(f.path)}</span>
+                <span class="tag tag-${f.type} flex-shrink-0">${f.type}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+setFilter('all');
+setTableFilter('all');
+renderFieldList();
+renderEndpointsTab();
+</script>
+</body>
+</html>
