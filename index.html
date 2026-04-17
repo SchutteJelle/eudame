@@ -1119,12 +1119,18 @@ async function fetchLive() {
 
   const BASE = 'https://ec.europa.eu/tools/eudamed/api';
 
-  const urlMap = {
+  const targetUrls = {
     'device-detail':  `${BASE}/devices/udiDiData/${id}?languageIso2Code=en`,
     'basic-udi':      `${BASE}/devices/basicUdiData/${id}?languageIso2Code=en`,
     'actor-detail':   `${BASE}/actors/${id}/publicInformation?languageIso2Code=en`,
     'actor-search':   `${BASE}/eos?languageIso2Code=en&page=1&pageSize=10&size=10&name=${encodeURIComponent(id)}`,
   };
+
+  // Use Vercel proxy when deployed, fall back to direct (works in browser only on some endpoints)
+  const useProxy = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+  const urlMap = Object.fromEntries(
+    Object.entries(targetUrls).map(([k, v]) => [k, useProxy ? `/api/proxy?url=${encodeURIComponent(v)}` : v])
+  );
   const labelMap = {
     'device-detail': `Device ${id.slice(0,8)}…`,
     'basic-udi':     `BasicUDI ${id.slice(0,8)}…`,
