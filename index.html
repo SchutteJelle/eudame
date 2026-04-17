@@ -1318,8 +1318,9 @@ function renderEndpointsTab() {
 
 // ─── LIVE DATA TAB ───────────────────────────────────────────────────────────
 
-let ldDeviceList   = [];
-let ldDetailCache  = {}; // uuid → { status: 'loading'|'loaded'|'error', data, error }
+let ldDeviceList  = [];
+// uuid → { detailStatus, detailData, detailError, basicUdiStatus, basicUdiData, basicUdiError }
+let ldDetailCache = {};
 
 function ldProxyUrl(target) {
   return `/api/proxy?url=${encodeURIComponent(target)}`;
@@ -1356,28 +1357,53 @@ async function searchLive() {
 
     ldRenderCards();
 
-    // Parallel-fetch Device Detail for all results
-    await Promise.allSettled(ldDeviceList.map(d => ldFetchDetail(d.uuid)));
+    // Parallel-fetch Device Detail + Basic UDI for all results
+    await Promise.allSettled(ldDeviceList.map(d => ldFetchAll(d)));
 
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
     cards.innerHTML = '';
   } finally {
     btn.disabled = false; btn.textContent = 'Search';
-    status.innerHTML = status.innerHTML.replace('fetching details…', 'details loaded');
+    status.innerHTML = status.innerHTML.replace('fetching details…', 'all details loaded');
   }
 }
 
-async function ldFetchDetail(uuid) {
-  ldDetailCache[uuid] = { status: 'loading', data: null };
+async function ldFetchAll(listItem) {
+  const uuid = listItem.uuid;
+  const basicUlid = listItem.basicUdiDiDataUlid;
+
+  ldDetailCache[uuid] = {
+    detailStatus: 'loading', detailData: null, detailError: null,
+    basicUdiStatus: basicUlid ? 'loading' : 'n/a', basicUdiData: null, basicUdiError: null,
+  };
   ldUpdateCardDetail(uuid);
-  try {
-    const res = await fetch(ldProxyUrl(`https://ec.europa.eu/tools/eudamed/api/devices/udiDiData/${uuid}?languageIso2Code=en`));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    ldDetailCache[uuid] = { status: 'loaded', data: await res.json() };
-  } catch (err) {
-    ldDetailCache[uuid] = { status: 'error', error: err.message, data: null };
+
+  const [detailRes, basicRes] = await Promise.allSettled([
+    fetch(ldProxyUrl(`https://ec.europa.eu/tools/eudamed/api/devices/udiDiData/${uuid}?languageIso2Code=en`)),
+    basicUlid ? fetch(ldProxyUrl(`https://ec.europa.eu/tools/eudamed/api/devices/basicUdiData/${basicUlid}?languageIso2Code=en`)) : Promise.resolve(null),
+  ]);
+
+  // Device detail
+  if (detailRes.status === 'fulfilled' && detailRes.value?.ok) {
+    ldDetailCache[uuid].detailStatus = 'loaded';
+    ldDetailCache[uuid].detailData   = await detailRes.value.json();
+  } else {
+    ldDetailCache[uuid].detailStatus = 'error';
+    ldDetailCache[uuid].detailError  = detailRes.reason?.message || `HTTP ${detailRes.value?.status}`;
   }
+
+  // Basic UDI
+  if (basicUlid) {
+    if (basicRes.status === 'fulfilled' && basicRes.value?.ok) {
+      ldDetailCache[uuid].basicUdiStatus = 'loaded';
+      ldDetailCache[uuid].basicUdiData   = await basicRes.value.json();
+    } else {
+      ldDetailCache[uuid].basicUdiStatus = 'error';
+      ldDetailCache[uuid].basicUdiError  = basicRes.reason?.message || `HTTP ${basicRes.value?.status}`;
+    }
+  }
+
   ldUpdateCardDetail(uuid);
 }
 
@@ -1397,7 +1423,7 @@ function clearLive() {
   ['ld-name','ld-srn','ld-udi'].forEach(id => document.getElementById(id).value = '');
 }
 
-// ── Card rendering ──
+// ── Card rendering ──────────────────────────────────────────────────────────
 
 const RISK_COLORS = {
   CLASS_I:   'bg-green-100 text-green-800',
@@ -1413,8 +1439,6 @@ function ldDeviceCard(d) {
 
   return `
     <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm" id="ld-card-${d.uuid}">
-
-      <!-- Header -->
       <div class="px-5 py-4 border-b border-gray-100 bg-gray-50">
         <div class="flex items-start gap-3">
           <div class="flex-1 min-w-0">
@@ -1423,174 +1447,191 @@ function ldDeviceCard(d) {
           </div>
           <div class="flex gap-1.5 flex-shrink-0 flex-wrap justify-end">
             ${riskCode ? `<span class="text-xs font-bold px-2 py-0.5 rounded-full ${riskColor}">${riskCode.replace('CLASS_','')}</span>` : ''}
-            ${status ? `<span class="text-xs px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">${escHtml(status)}</span>` : ''}
+            ${status    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">${escHtml(status)}</span>` : ''}
           </div>
         </div>
-
-        <!-- Quick identifiers row -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-          ${ldQuickField('Primary DI', d.primaryDi)}
-          ${ldQuickField('Basic UDI', d.basicUdi)}
-          ${ldQuickField('Reference', d.reference)}
-          ${ldQuickField('Mfr SRN', d.manufacturerSrn)}
+          ${ldQF('Primary DI', d.primaryDi)}
+          ${ldQF('Basic UDI',  d.basicUdi)}
+          ${ldQF('Reference',  d.reference)}
+          ${ldQF('Mfr SRN',   d.manufacturerSrn)}
         </div>
       </div>
-
-      <!-- Detail section (async) -->
       <div id="ld-detail-${d.uuid}">${ldDetailSection(d.uuid)}</div>
-    </div>
-  `;
-}
-
-function ldQuickField(label, value) {
-  if (!value) return `<div><div class="text-xs text-gray-400">${label}</div><div class="text-xs text-gray-300">—</div></div>`;
-  return `
-    <div>
-      <div class="text-xs text-gray-400">${label}</div>
-      <div class="path-mono text-xs text-gray-700 truncate" title="${escHtml(value)}">${escHtml(value)}</div>
     </div>`;
 }
+
+function ldQF(label, value) {
+  return `<div>
+    <div class="text-xs text-gray-400">${label}</div>
+    <div class="path-mono text-xs ${value ? 'text-gray-700' : 'text-gray-300'} truncate" title="${escHtml(value||'')}">${escHtml(value||'—')}</div>
+  </div>`;
+}
+
+// ── Full-field detail section ────────────────────────────────────────────────
 
 function ldDetailSection(uuid) {
   const cache = ldDetailCache[uuid];
+  if (!cache) return ldSpinner('Waiting…');
 
-  if (!cache || cache.status === 'loading')
-    return `<div class="px-5 py-4 text-xs text-gray-400 flex items-center gap-2">
-      <svg class="animate-spin w-3 h-3 text-gray-300" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-      Loading detail…</div>`;
+  const detailLoading = cache.detailStatus === 'loading';
+  const basicLoading  = cache.basicUdiStatus === 'loading';
 
-  if (cache.status === 'error')
-    return `<div class="px-5 py-3 text-xs text-red-400">Could not load detail: ${escHtml(cache.error)}</div>`;
+  if (detailLoading && basicLoading) return ldSpinner('Loading Device Detail + Basic UDI…');
+  if (detailLoading) return ldSpinner('Loading Device Detail…');
 
-  const d = cache.data;
-  if (!d) return '';
+  if (cache.detailStatus === 'error')
+    return `<div class="px-5 py-3 text-xs text-red-400">Device Detail error: ${escHtml(cache.detailError)}</div>`;
 
-  const tradeName = d.tradeName?.texts?.find(t => t.language?.isoCode === 'en')?.text
-    || d.tradeName?.texts?.[0]?.text || '';
-  const cndCodes = (d.cndNomenclatures || [])
-    .map(c => `<span title="${escHtml(c.description?.texts?.[0]?.text || '')}" class="cursor-help underline decoration-dotted">${escHtml(c.code)}</span>`)
-    .join(', ');
-  const markets = (d.marketInfoLink?.msWhereAvailable || [])
-    .map(m => m.country?.iso2Code).filter(Boolean);
-  const externalUrl = `https://ec.europa.eu/tools/eudamed/api/devices/udiDiData/${d.uuid}?languageIso2Code=en`;
+  const detail   = cache.detailData;
+  const basicUdi = cache.basicUdiData; // may be null if still loading or errored
 
-  const boolRow = (label, val) => val == null ? '' : `
-    <div class="flex items-center gap-2">
-      <span class="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-xs
-        ${val ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}">${val ? '✓' : '✗'}</span>
-      <span class="text-xs text-gray-700">${label}</span>
-    </div>`;
+  // Flatten both responses into rows with source labels
+  const rows = [
+    ...ldFlatten(detail,   'Device Detail'),
+    ...(basicLoading ? [] : ldFlatten(basicUdi, 'Basic UDI')),
+  ];
+
+  const detailUrl  = `https://ec.europa.eu/tools/eudamed/api/devices/udiDiData/${detail.uuid}?languageIso2Code=en`;
+  const basicUrl   = cache.basicUdiStatus === 'loaded'
+    ? `https://ec.europa.eu/tools/eudamed/api/devices/basicUdiData/${ldDeviceList.find(d=>d.uuid===uuid)?.basicUdiDiDataUlid}?languageIso2Code=en`
+    : null;
+
+  const totalFields  = rows.length;
+  const filledFields = rows.filter(r => !r.isNull && !r.isEmpty).length;
 
   return `
     <div class="px-5 py-4">
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
 
-        <!-- Col 1: Identification + description -->
-        <div class="space-y-4">
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Identification</div>
-            ${ldKV('Primary DI', d.primaryDi?.code)}
-            ${ldKV('Issuing agency', d.primaryDi?.issuingAgency?.code)}
-            ${ldKV('Reference', d.reference)}
-            ${ldKV('UUID', d.uuid, true)}
-            ${ldKV('Version', `v${d.versionNumber} · ${d.versionState?.code || ''}`)}
-          </div>
-          ${tradeName ? `
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Trade name (EN)</div>
-            <div class="text-sm text-gray-800">${escHtml(tradeName)}</div>
-          </div>` : ''}
-          ${d.additionalDescription ? `
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Description</div>
-            <div class="text-xs text-gray-600">${escHtml(d.additionalDescription)}</div>
-          </div>` : ''}
-          ${cndCodes ? `
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">CND codes</div>
-            <div class="text-xs font-mono text-gray-700">${cndCodes}</div>
-          </div>` : ''}
+      <!-- Stats + filter bar -->
+      <div class="flex items-center gap-3 mb-3 flex-wrap">
+        <div class="text-xs text-gray-500">
+          <span class="font-semibold text-gray-800">${filledFields}</span> / ${totalFields} fields have a value
+          ${basicLoading ? `<span class="ml-2 text-gray-400 animate-pulse">· Basic UDI loading…</span>` : ''}
+          ${cache.basicUdiStatus === 'error' ? `<span class="ml-2 text-amber-500">· Basic UDI unavailable</span>` : ''}
         </div>
-
-        <!-- Col 2: Properties -->
-        <div class="space-y-4">
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Device properties</div>
-            <div class="space-y-1.5">
-              ${boolRow('Single use',        d.singleUse)}
-              ${boolRow('Sterile',           d.sterile)}
-              ${boolRow('Reprocessed SUD',   d.reprocessed)}
-              ${boolRow('Latex',             d.latex)}
-              ${boolRow('Direct marking',    d.directMarking)}
-              ${boolRow('CMR substance',     d.cmrSubstance)}
-              ${boolRow('Endocrine disruptor', d.endocrineDisruptor)}
-              ${boolRow('EMR',               d.emr)}
-              ${boolRow('Contact lenses',    d.contactLenses)}
-              ${boolRow('OEM applicable',    d.oemApplicable)}
-            </div>
-            ${d.maxNumberOfReusesApplicable && d.maxNumberOfReuses != null
-              ? `<div class="text-xs text-gray-500 mt-2 ml-6">Max reuses: <strong>${d.maxNumberOfReuses}</strong></div>` : ''}
-            ${d.baseQuantity != null
-              ? `<div class="text-xs text-gray-500 mt-1 ml-6">Base qty: <strong>${d.baseQuantity}</strong></div>` : ''}
-          </div>
-        </div>
-
-        <!-- Col 3: UDI-PI + Market -->
-        <div class="space-y-4">
-          ${d.udiPiType ? `
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">UDI-PI contains</div>
-            <div class="space-y-1.5">
-              ${boolRow('Batch / Lot number',      d.udiPiType.batchNumber)}
-              ${boolRow('Serialization number',    d.udiPiType.serializationNumber)}
-              ${boolRow('Manufacturing date',      d.udiPiType.manufacturingDate)}
-              ${boolRow('Expiration date',         d.udiPiType.expirationDate)}
-              ${boolRow('Software identification', d.udiPiType.softwareIdentification)}
-            </div>
-          </div>` : ''}
-
-          ${d.placedOnTheMarket ? `
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Placed on market</div>
-            <div class="text-xs text-gray-700">${escHtml(d.placedOnTheMarket.name || d.placedOnTheMarket.iso2Code || '—')}</div>
-          </div>` : ''}
-
-          ${markets.length ? `
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Available in</div>
-            <div class="flex flex-wrap gap-1">
-              ${markets.map(c => `<span class="text-xs font-mono bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">${escHtml(c)}</span>`).join('')}
-            </div>
-          </div>` : ''}
-
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Status</div>
-            <div class="text-xs text-gray-700">${escHtml(d.deviceStatus?.type?.code?.replace(/_/g,' ') || '—')}</div>
-            ${d.deviceStatus?.statusDate ? `<div class="text-xs text-gray-400">${escHtml(d.deviceStatus.statusDate)}</div>` : ''}
-          </div>
+        <div class="flex items-center gap-2 ml-auto">
+          <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+            <input type="checkbox" id="ld-show-null-${uuid}" onchange="ldApplyFilter('${uuid}')" checked
+              class="rounded" />
+            Show null / empty
+          </label>
+          <input id="ld-filter-${uuid}" type="text" placeholder="Filter fields…"
+            oninput="ldApplyFilter('${uuid}')"
+            class="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-gray-50 w-44" />
         </div>
       </div>
 
-      <!-- Footer -->
-      <div class="border-t border-gray-100 mt-4 pt-3 flex items-center gap-4 flex-wrap">
-        <a href="${escHtml(externalUrl)}" target="_blank"
-           class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+      <!-- Field table -->
+      <div class="border border-gray-100 rounded-lg overflow-hidden text-xs">
+        <table class="w-full" id="ld-table-${uuid}">
+          <thead class="bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold text-gray-500 w-2/5">Field path</th>
+              <th class="text-left px-3 py-2 font-semibold text-gray-500 w-2/5">Value</th>
+              <th class="text-left px-3 py-2 font-semibold text-gray-500 w-1/5">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => ldFieldRow(r, i)).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Footer links -->
+      <div class="mt-3 flex items-center gap-4 flex-wrap text-xs">
+        <a href="${escHtml(detailUrl)}" target="_blank" class="text-blue-600 hover:underline flex items-center gap-1">
           <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-          Open raw JSON
+          Device Detail JSON
         </a>
-        ${d.linkedUdiDiView ? `<span class="text-xs text-gray-400">Linked UDI-DI available</span>` : ''}
-        ${d.latestVersion ? '' : `<span class="text-xs text-amber-600 font-medium">Not latest version</span>`}
+        ${basicUrl ? `<a href="${escHtml(basicUrl)}" target="_blank" class="text-orange-600 hover:underline flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+          Basic UDI JSON
+        </a>` : ''}
+        ${!detail.latestVersion ? `<span class="text-amber-600 font-medium">⚠ Not latest version</span>` : ''}
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
-function ldKV(label, value, mono) {
-  if (!value) return '';
-  return `<div class="flex gap-2 mb-1">
-    <span class="text-xs text-gray-400 w-24 flex-shrink-0">${label}</span>
-    <span class="text-xs ${mono ? 'font-mono' : ''} text-gray-700 break-all">${escHtml(value)}</span>
-  </div>`;
+function ldFieldRow(r, i) {
+  const bg = i % 2 === 0 ? '' : 'bg-gray-50';
+  const sourceTag = r.source === 'Device Detail'
+    ? 'tag-ep-2' : r.source === 'Basic UDI' ? 'tag-ep-3' : 'tag-ep';
+
+  let valHtml;
+  if (r.isNull)
+    valHtml = `<span class="text-gray-300 italic">null</span>`;
+  else if (r.isEmpty)
+    valHtml = `<span class="text-gray-300 italic">${escHtml(r.emptyLabel)}</span>`;
+  else if (r.type === 'boolean')
+    valHtml = `<span class="font-semibold ${r.value === 'true' ? 'text-green-700' : 'text-gray-400'}">${r.value}</span>`;
+  else
+    valHtml = `<span class="font-mono text-gray-800 break-all">${escHtml(String(r.value).slice(0, 120))}${String(r.value).length > 120 ? '…' : ''}</span>`;
+
+  return `<tr class="${bg} ld-row" data-path="${escHtml(r.path.toLowerCase())}" data-null="${r.isNull || r.isEmpty}">
+    <td class="px-3 py-1.5 font-mono text-gray-600">${escHtml(r.path)}</td>
+    <td class="px-3 py-1.5">${valHtml}</td>
+    <td class="px-3 py-1.5"><span class="tag ${sourceTag}" style="font-size:10px">${r.source}</span></td>
+  </tr>`;
+}
+
+function ldApplyFilter(uuid) {
+  const query     = (document.getElementById(`ld-filter-${uuid}`)?.value || '').toLowerCase();
+  const showNull  = document.getElementById(`ld-show-null-${uuid}`)?.checked ?? true;
+  const table     = document.getElementById(`ld-table-${uuid}`);
+  if (!table) return;
+  table.querySelectorAll('tr.ld-row').forEach(row => {
+    const path    = row.dataset.path || '';
+    const isNull  = row.dataset.null === 'true';
+    const matchQ  = !query || path.includes(query);
+    const matchN  = showNull || !isNull;
+    row.style.display = matchQ && matchN ? '' : 'none';
+  });
+}
+
+// Flatten a JSON object into display rows
+function ldFlatten(obj, source, prefix) {
+  if (!obj) return [];
+  const rows = [];
+  function walk(node, path) {
+    if (node === null || node === undefined) {
+      rows.push({ path, value: null, isNull: true, isEmpty: false, type: 'null', source });
+      return;
+    }
+    if (Array.isArray(node)) {
+      if (node.length === 0) {
+        rows.push({ path, value: '[]', isNull: false, isEmpty: true, emptyLabel: '[] empty array', type: 'array', source });
+        return;
+      }
+      // For arrays of primitives, show inline; for objects recurse
+      if (typeof node[0] !== 'object') {
+        rows.push({ path, value: node.join(', '), isNull: false, isEmpty: false, type: 'array', source });
+      } else {
+        node.forEach((item, i) => walk(item, `${path}[${i}]`));
+      }
+      return;
+    }
+    if (typeof node === 'object') {
+      const keys = Object.keys(node);
+      if (keys.length === 0) {
+        rows.push({ path, value: '{}', isNull: false, isEmpty: true, emptyLabel: '{} empty object', type: 'object', source });
+        return;
+      }
+      keys.forEach(k => walk(node[k], path ? `${path}.${k}` : k));
+      return;
+    }
+    rows.push({ path, value: node, isNull: false, isEmpty: false, type: typeof node, source });
+  }
+  walk(obj, prefix || '');
+  return rows;
+}
+
+function ldSpinner(msg) {
+  return `<div class="px-5 py-4 text-xs text-gray-400 flex items-center gap-2">
+    <svg class="animate-spin w-3 h-3 text-gray-300" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+    </svg>${msg}</div>`;
 }
 
 function ldSkeletons(n) {
