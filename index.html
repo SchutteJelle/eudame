@@ -238,9 +238,9 @@ const ENDPOINTS = [
   {
     id: 'ep1', label: 'Devices List', tagClass: 'tag-ep', method: 'GET',
     path: '/devices/udiDiData',
-    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api',
     description: 'Search/list UDI-DI device records. Paginated, max 300/page.',
-    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/v1/devices/udiDiData?languageIso2Code=en&page=1&pageSize=5&size=5',
+    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/devices/udiDiData?languageIso2Code=en&page=1&pageSize=5&size=5',
     exampleNote: null,
     params: [
       { name: 'page',             type: 'integer', required: true,  description: 'Page number (starts at 1)' },
@@ -257,9 +257,9 @@ const ENDPOINTS = [
   {
     id: 'ep2', label: 'Device Detail', tagClass: 'tag-ep-2', method: 'GET',
     path: '/devices/udiDiData/{deviceId}',
-    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api',
     description: 'Full detail for a single UDI-DI device record.',
-    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/v1/devices/udiDiData/{deviceId}?languageIso2Code=en',
+    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/devices/udiDiData/{deviceId}?languageIso2Code=en',
     exampleNote: 'Replace {deviceId} with a UUID from the Devices List response (content[].uuid)',
     params: [
       { name: 'deviceId',         type: 'UUID',   required: true, description: 'Device UUID (path parameter)' },
@@ -269,9 +269,9 @@ const ENDPOINTS = [
   {
     id: 'ep3', label: 'Basic UDI', tagClass: 'tag-ep-3', method: 'GET',
     path: '/devices/basicUdiData/{basicUdiDiId}',
-    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api',
     description: 'Basic UDI-DI data including manufacturer, certificates, and classification.',
-    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/v1/devices/basicUdiData/{basicUdiDiId}?languageIso2Code=en',
+    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/devices/basicUdiData/{basicUdiDiId}?languageIso2Code=en',
     exampleNote: 'Replace {basicUdiDiId} with a UUID from the Devices List response (content[].basicUdiDiDataUlid or via Device Detail)',
     params: [
       { name: 'basicUdiDiId',     type: 'UUID',   required: true, description: 'Basic UDI-DI UUID (path parameter)' },
@@ -281,9 +281,9 @@ const ENDPOINTS = [
   {
     id: 'ep4', label: 'Actor Detail', tagClass: 'tag-ep-4', method: 'GET',
     path: '/actors/{actorId}/publicInformation',
-    baseUrl: 'https://ec.europa.eu/tools/eudamed/api/v1',
+    baseUrl: 'https://ec.europa.eu/tools/eudamed/api',
     description: 'Full public information for an economic actor (manufacturer, AR, importer, distributor, NB).',
-    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/v1/actors/{actorId}/publicInformation?languageIso2Code=en',
+    exampleUrl: 'https://ec.europa.eu/tools/eudamed/api/actors/{actorId}/publicInformation?languageIso2Code=en',
     exampleNote: 'Replace {actorId} with a UUID from the Actor Search response (content[].uuid)',
     params: [
       { name: 'actorId',          type: 'UUID',   required: true, description: 'Actor UUID (path parameter)' },
@@ -1117,14 +1117,13 @@ async function fetchLive() {
 
   if (!id) { status.textContent = 'Enter a UUID or search term.'; return; }
 
-  const BASE_V1  = 'https://ec.europa.eu/tools/eudamed/api/v1';
-  const BASE_EOS = 'https://ec.europa.eu/tools/eudamed/api';
+  const BASE = 'https://ec.europa.eu/tools/eudamed/api';
 
   const urlMap = {
-    'device-detail':  `${BASE_V1}/devices/udiDiData/${id}?languageIso2Code=en`,
-    'basic-udi':      `${BASE_V1}/devices/basicUdiData/${id}?languageIso2Code=en`,
-    'actor-detail':   `${BASE_V1}/actors/${id}/publicInformation?languageIso2Code=en`,
-    'actor-search':   `${BASE_EOS}/eos?languageIso2Code=en&page=1&pageSize=10&size=10&name=${encodeURIComponent(id)}`,
+    'device-detail':  `${BASE}/devices/udiDiData/${id}?languageIso2Code=en`,
+    'basic-udi':      `${BASE}/devices/basicUdiData/${id}?languageIso2Code=en`,
+    'actor-detail':   `${BASE}/actors/${id}/publicInformation?languageIso2Code=en`,
+    'actor-search':   `${BASE}/eos?languageIso2Code=en&page=1&pageSize=10&size=10&name=${encodeURIComponent(id)}`,
   };
   const labelMap = {
     'device-detail': `Device ${id.slice(0,8)}…`,
